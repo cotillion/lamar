@@ -92,8 +92,6 @@ public class LambdaInstance<TContainer, TReturn> : Instance
                 if (_resolver == null)
                 {
                     _resolver = buildResolver(topScope.Root);
-                    _resolver.Hash = Hash;
-                    _resolver.Name = Name;
                 }
             }
         }
@@ -110,8 +108,6 @@ public class LambdaInstance<TContainer, TReturn> : Instance
                 if (_resolver == null)
                 {
                     _resolver = buildResolver(scope.Root);
-                    _resolver.Hash = Hash;
-                    _resolver.Name = Name;
                 }
             }
         }
@@ -121,19 +117,18 @@ public class LambdaInstance<TContainer, TReturn> : Instance
 
     protected IResolver buildResolver(Scope rootScope)
     {
-        switch (Lifetime)
+        IResolver resolver = Lifetime switch
         {
-            case ServiceLifetime.Transient:
-                return new TransientLambdaResolver<TContainer, TReturn>(Factory);
+            ServiceLifetime.Transient => new TransientLambdaResolver<TContainer, TReturn>(Factory),
+            ServiceLifetime.Scoped => new ScopedLambdaResolver<TContainer, TReturn>(Factory),
+            ServiceLifetime.Singleton => new SingletonLambdaResolver<TContainer, TReturn>(Factory, rootScope),
+            _ => throw new ArgumentOutOfRangeException(nameof(Lifetime))
+        };
 
-            case ServiceLifetime.Scoped:
-                return new ScopedLambdaResolver<TContainer, TReturn>(Factory);
-
-            case ServiceLifetime.Singleton:
-                return new SingletonLambdaResolver<TContainer, TReturn>(Factory, rootScope);
-        }
-
-        throw new ArgumentOutOfRangeException(nameof(Lifetime));
+        // Both callers publish the returned resolver to lock-free readers. Complete its cache identity first.
+        resolver.Hash = Hash;
+        resolver.Name = Name;
+        return resolver;
     }
 
 
