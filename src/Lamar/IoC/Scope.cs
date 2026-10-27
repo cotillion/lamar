@@ -34,6 +34,13 @@ public class Scope : IServiceContext, IServiceProviderIsKeyedService
 
     internal ImHashMap<int, object> Services = ImHashMap<int, object>.Empty;
 
+    internal void StoreService(int hash, object service)
+    {
+        // Different registrations can finish building concurrently. Retry only publication of the
+        // immutable map, never construction or disposal tracking.
+        Ref.Swap(ref Services, hash, service, static (services, key, value) => services.AddOrUpdate(key, value));
+    }
+
     public Scope(IServiceCollection services)
     {
         Root = this;

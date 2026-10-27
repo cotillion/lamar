@@ -24,7 +24,7 @@ public abstract class ScopedResolver<T> : IResolver
             }
 
             service = Build(scope);
-            scope.Services = scope.Services.AddOrUpdate(Hash, service);
+            scope.StoreService(Hash, service);
 
             scope.TryAddDisposable(service);
 

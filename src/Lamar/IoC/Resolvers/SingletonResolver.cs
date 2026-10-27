@@ -45,7 +45,7 @@ public abstract class SingletonResolver<T> : IResolver
                     _service = Build(_topLevelScope);
                     _topLevelScope.TryAddDisposable(_service);
 
-                    _topLevelScope.Services = _topLevelScope.Services.AddOrUpdate(Hash, _service);
+                    _topLevelScope.StoreService(Hash, _service);
                 }
             }
         }

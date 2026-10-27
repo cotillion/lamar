@@ -163,7 +163,14 @@ public class ServiceGraph : IDisposable, IAsyncDisposable
 
     internal void Inject(Type serviceType, object @object)
     {
-        _byType = _byType.AddOrUpdate(serviceType, s => @object);
+        Func<Scope, object> resolver = s => @object;
+        cacheResolver(serviceType, resolver);
+    }
+
+    private void cacheResolver(Type serviceType, Func<Scope, object> resolver)
+    {
+        // Singleton completion calls Inject outside _familyLock. All writers must preserve its updates.
+        Ref.Swap(ref _byType, serviceType, resolver, static (resolvers, type, value) => resolvers.AddOrUpdate(type, value));
     }
 
 
@@ -372,6 +379,9 @@ public class ServiceGraph : IDisposable, IAsyncDisposable
             return resolver;
         }
 
+        // Before taking the lock: building a singleton may need it
+        ResolveFamily(serviceType)?.Default?.BuildInjectedSingletons(RootScope);
+
         lock (_familyLock)
         {
             if (_byType.TryFind(serviceType, out resolver))
@@ -402,7 +412,7 @@ public class ServiceGraph : IDisposable, IAsyncDisposable
                 resolver = instance.ToResolver(RootScope);
             }
 
-            _byType = _byType.AddOrUpdate(serviceType, resolver);
+            cacheResolver(serviceType, resolver);
 
             return resolver;
         }
@@ -559,7 +569,7 @@ public class ServiceGraph : IDisposable, IAsyncDisposable
                 {
                     if (family.Append(group, DecoratorPolicies) == AppendState.NewDefault)
                     {
-                        _byType = _byType.Remove(group.Key);
+                        Ref.Swap(ref _byType, group.Key, static (resolvers, type) => resolvers.Remove(type));
                     }
                 }
                 else

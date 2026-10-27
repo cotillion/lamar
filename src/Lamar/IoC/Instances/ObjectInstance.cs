@@ -18,6 +18,12 @@ public class ObjectInstance : Instance, IDisposable
 
     public object Service { get; }
 
+    internal override bool TryGetBuiltSingleton(Scope rootScope, out object service)
+    {
+        service = Service;
+        return true;
+    }
+
     public void Dispose()
     {
         (Service as IDisposable)?.Dispose();

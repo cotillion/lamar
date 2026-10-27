@@ -375,9 +375,64 @@ public abstract class Instance
         return scope.Services.TryFind(Hash, out service);
     }
 
+    /// <summary>
+    ///     The singleton, if it has been built, without building it or taking any lock
+    /// </summary>
+    internal virtual bool TryGetBuiltSingleton(Scope rootScope, out object service)
+    {
+        return tryGetService(rootScope, out service);
+    }
+
+    // Whether CreateVariable(BuildMode.Dependency, ...) builds this instance in its parent's resolver.
+    internal virtual bool IsInlinedInParent => false;
+
+    /// <summary>
+    ///     Builds the singletons the resolver of this instance injects, so that generating the resolver finds them built
+    ///     and inlines them. Must be called without holding graph or resolver-generation locks: building a singleton
+    ///     runs user code under its construction lock, which may resolve types and need the service graph lock.
+    /// </summary>
+    internal void BuildInjectedSingletons(Scope rootScope)
+    {
+        // As without the singletons built: an instance with errors gets a resolver that reports them
+        if (ImmediateDependencies == null || ImmediateDependencies.Length == 0 || ErrorMessages.Any() ||
+            Dependencies.Any(x => x.ErrorMessages.Any()))
+        {
+            return;
+        }
+
+        var visited = new HashSet<Instance>();
+        var pending = new Stack<Instance>(ImmediateDependencies);
+        while (pending.Count > 0)
+        {
+            var dependency = pending.Pop();
+            if (!visited.Add(dependency))
+            {
+                continue;
+            }
+
+            if (dependency.Lifetime == ServiceLifetime.Singleton)
+            {
+                // Built once, by its instance; its own dependencies are built with it
+                if (!dependency.TryGetBuiltSingleton(rootScope, out _))
+                {
+                    dependency.QuickResolve(rootScope);
+                }
+            }
+            else if (dependency.IsInlinedInParent && dependency.ImmediateDependencies != null)
+            {
+                // Built inline by the resolver, so the singletons it injects are injected into the resolver too. Other
+                // dependencies have resolvers of their own, or resolve when they're used, like Lazy<T> and Func<T>.
+                foreach (var inner in dependency.ImmediateDependencies)
+                {
+                    pending.Push(inner);
+                }
+            }
+        }
+    }
+
     protected void store(Scope scope, object service)
     {
-        scope.Services = scope.Services.AddOrUpdate(Hash, service);
+        scope.StoreService(Hash, service);
     }
 
     /// <summary>

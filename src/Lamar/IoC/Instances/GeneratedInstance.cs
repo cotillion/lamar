@@ -17,6 +17,8 @@ namespace Lamar.IoC.Instances;
 public abstract class GeneratedInstance : Instance
 {
     private readonly object _locker = new();
+    // Construction must not share the lock used to generate resolvers: user code can re-enter the graph.
+    protected readonly object _serviceLock = new();
     protected Func<Scope, object> _resolver;
 
     protected GeneratedInstance(Type serviceType, Type implementationType, ServiceLifetime lifetime) : base(serviceType,
@@ -73,6 +75,8 @@ public abstract class GeneratedInstance : Instance
     }
 
 
+    internal override bool IsInlinedInParent => Lifetime == ServiceLifetime.Transient;
+
     public sealed override Variable CreateVariable(BuildMode mode, ResolverVariables variables, bool isRoot)
     {
         if (Lifetime == ServiceLifetime.Singleton)
@@ -85,7 +89,7 @@ public abstract class GeneratedInstance : Instance
             return new InjectedServiceField(this);
         }
 
-        if (Lifetime == ServiceLifetime.Scoped && mode == BuildMode.Dependency)
+        if (!IsInlinedInParent && mode == BuildMode.Dependency)
         {
             return new GetInstanceFrame(this).Variable;
         }
@@ -103,8 +107,6 @@ public abstract class GeneratedInstance : Instance
         {
             case ServiceLifetime.Scoped:
             {
-                var locker = new object();
-
                 return s =>
                 {
                     if (s.Services.TryFind(Hash, out var service))
@@ -112,7 +114,7 @@ public abstract class GeneratedInstance : Instance
                         return service;
                     }
 
-                    lock (locker)
+                    lock (_serviceLock)
                     {
                         if (s.Services.TryFind(Hash, out service))
                         {
@@ -121,7 +123,7 @@ public abstract class GeneratedInstance : Instance
 
                         service = resolver(s);
 
-                        s.Services = s.Services.AddOrUpdate(Hash, service);
+                        s.StoreService(Hash, service);
 
                         return service;
                     }
@@ -130,8 +132,6 @@ public abstract class GeneratedInstance : Instance
 
             case ServiceLifetime.Singleton:
             {
-                var locker = new object();
-
                 return s =>
                 {
                     if (root.Services.TryFind(Hash, out var service))
@@ -139,7 +139,7 @@ public abstract class GeneratedInstance : Instance
                         return service;
                     }
 
-                    lock (locker)
+                    lock (_serviceLock)
                     {
                         if (root.Services.TryFind(Hash, out service))
                         {
@@ -147,7 +147,7 @@ public abstract class GeneratedInstance : Instance
                         }
 
                         service = resolver(root);
-                        root.Services = root.Services.AddOrUpdate(Hash, service);
+                        root.StoreService(Hash, service);
 
                         return service;
                     }
@@ -184,6 +184,9 @@ public abstract class GeneratedInstance : Instance
         {
             return _resolver(scope);
         }
+
+        // Before taking the lock: building a singleton may need it, see BuildInjectedSingletons
+        BuildInjectedSingletons(scope.Root);
 
         lock (_locker)
         {

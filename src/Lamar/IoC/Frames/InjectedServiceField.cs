@@ -45,9 +45,14 @@ public class InjectedServiceField : InjectedField, IServiceVariable
     {
         if (Instance.Lifetime == ServiceLifetime.Singleton)
         {
-            var scope = definition.Context.As<Scope>();
-            var @object = Instance.QuickResolve(scope);
-            return Expression.Constant(@object, @object?.GetType() ?? Instance.ServiceType);
+            // Never built here: this runs while the service graph lock is held, see SingletonReference
+            var rootScope = definition.Context.As<Scope>().Root;
+            if (Instance.TryGetBuiltSingleton(rootScope, out var @object))
+            {
+                return Expression.Constant(@object, @object?.GetType() ?? Instance.ServiceType);
+            }
+
+            return SingletonReference.For(Instance, rootScope);
         }
 
         // This needs to be inlined singletons

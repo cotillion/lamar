@@ -118,8 +118,6 @@ public class ConstructorInstance : GeneratedInstance, IConfiguredInstance
         "Cannot fill the dependencies of any of the public constructors";
 
 
-    private readonly object _locker = new();
-
     private readonly List<InjectedSetter> _setters = new();
 
 
@@ -178,16 +176,17 @@ public class ConstructorInstance : GeneratedInstance, IConfiguredInstance
     {
         if (Lifetime == ServiceLifetime.Singleton)
         {
+            var root = topScope.Root;
             return s =>
             {
-                if (topScope.Services.TryFind(Hash, out var service))
+                if (root.Services.TryFind(Hash, out var service))
                 {
                     return service;
                 }
 
-                lock (_locker)
+                lock (_serviceLock)
                 {
-                    service = ((Func<Scope, object>)quickResolve)(topScope);
+                    service = quickResolve(root);
                 }
 
                 return service;
@@ -204,9 +203,9 @@ public class ConstructorInstance : GeneratedInstance, IConfiguredInstance
             return _resolver(scope);
         }
 
-        if (Lifetime == ServiceLifetime.Singleton)
+        if (Lifetime != ServiceLifetime.Transient)
         {
-            lock (_locker)
+            lock (_serviceLock)
             {
                 return quickResolve(scope);
             }

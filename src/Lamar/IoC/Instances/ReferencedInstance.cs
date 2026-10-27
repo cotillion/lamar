@@ -38,6 +38,13 @@ public class ReferencedInstance : Instance
         return _inner.QuickResolve(scope);
     }
 
+    internal override bool IsInlinedInParent => _inner.IsInlinedInParent;
+
+    internal override bool TryGetBuiltSingleton(Scope rootScope, out object service)
+    {
+        return _inner.TryGetBuiltSingleton(rootScope, out service);
+    }
+
     public override bool RequiresServiceProvider(IMethodVariables method)
     {
         return _inner.RequiresServiceProvider(method);
